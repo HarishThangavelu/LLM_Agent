@@ -1,6 +1,7 @@
 claude/
 env/
 venv/
+agent/
 __pycache__/
 *.pyc
 *.pyo       
