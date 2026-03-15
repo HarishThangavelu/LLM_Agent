@@ -1,12 +1,15 @@
 import asyncio
+import random
 from playwright.async_api import async_playwright
+
 
 BASE = "https://www.stepstone.de"
 
 SKILL_FILTER = [
-    "python","data","ai","ml","software",
-    "backend","vision","automation","engineer"
+    "python", "data", "ai", "ml", "software",
+    "backend", "vision", "automation", "engineer"
 ]
+
 
 def is_recent(posted_text):
 
@@ -16,82 +19,109 @@ def is_recent(posted_text):
     t = posted_text.lower()
 
     return any(x in t for x in [
-        "heute","gestern","1 tag","2 tag","3 tag"
+        "heute", "gestern", "1 tag", "2 tag", "3 tag"
     ])
+
 
 def is_relevant(title):
     return any(k in title.lower() for k in SKILL_FILTER)
 
 
-async def scrape_stepstone(query):
+async def scrape_stepstone(query, max_pages=2):
 
-    print("RUNNING STEPSTONE V3")
+    print("RUNNING STEPSTONE V4")
 
     jobs = []
-
-    url = f"{BASE}/jobs/{query}"
 
     async with async_playwright() as p:
 
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
-        print("[PW] Opening:", url)
+        for page_no in range(max_pages):
 
-        await page.goto(url, timeout=60000)
-        await page.wait_for_timeout(4000)
+            url = f"{BASE}/jobs/{query}" if page_no == 0 else f"{BASE}/jobs/{query}?page={page_no+1}"
 
-        try:
-            await page.click('button:has-text("Akzeptieren")', timeout=4000)
-        except:
-            pass
+            print(f"[PW] Opening page {page_no+1}: {url}")
 
-        for _ in range(6):
-            await page.mouse.wheel(0, 5000)
-            await page.wait_for_timeout(1500)
+            await page.goto(url, timeout=60000)
+            await page.wait_for_timeout(4000)
 
-        await page.wait_for_selector("article")
+            # cookie
+            try:
+                await page.click('button:has-text("Akzeptieren")', timeout=3000)
+            except:
+                pass
 
-        cards = await page.query_selector_all("article")
+            # lazy load
+            for _ in range(5):
+                await page.mouse.wheel(0, 4000)
+                await page.wait_for_timeout(1200)
 
-        print("[PW] Articles:", len(cards))
+            await page.wait_for_selector("article")
 
-        for card in cards:
+            cards = await page.query_selector_all("article")
 
-            link_el = await card.query_selector('a[href*="/stellenangebote"]')
-            if not link_el:
-                continue
+            print("[PW] Articles:", len(cards))
 
-            title = (await link_el.inner_text()).strip()
+            page_relevant = 0
 
-            if not is_relevant(title):
-                continue
+            for card in cards:
 
-            href = await link_el.get_attribute("href")
+                link_el = await card.query_selector('a[href*="/stellenangebote"]')
+                if not link_el:
+                    continue
 
-            date_el = await card.query_selector("time, span[class*='date']")
-            posted = ""
+                title = (await link_el.inner_text()).strip()
 
-            if date_el:
-                posted = (await date_el.inner_text()).strip()
+                if not is_relevant(title):
+                    continue
 
-            if not is_recent(posted):
-                continue
+                href = await link_el.get_attribute("href")
 
-            if not href.startswith("http"):
-                href = BASE + href
+                date_el = await card.query_selector("time, span[class*='date']")
+                posted = ""
 
-            jobs.append({
-                "title": title,
-                "link": href,
-                "posted": posted,
-                "source": "stepstone"
-            })
+                if date_el:
+                    posted = (await date_el.inner_text()).strip()
+
+                if not is_recent(posted):
+                    continue
+
+                if not href.startswith("http"):
+                    href = BASE + href
+
+                jobs.append({
+                    "title": title,
+                    "link": href,
+                    "posted": posted,
+                    "source": "stepstone"
+                })
+
+                page_relevant += 1
+
+            print("[PW] Relevant jobs this page:", page_relevant)
+
+            # crawl stop logic
+            if page_relevant == 0:
+                print("[PW] Stop pagination → no relevant jobs")
+                break
+
+            sleep = random.uniform(3, 6)
+            print(f"[PW] Page sleep {sleep:.2f}s")
+            await page.wait_for_timeout(int(sleep * 1000))
 
         await browser.close()
 
+    # cross-page dedupe
     jobs = list({j["link"]: j for j in jobs}.values())
 
     print("[PW] Final jobs:", len(jobs))
 
     return jobs
+
+
+# optional standalone debug run
+if __name__ == "__main__":
+    res = asyncio.run(scrape_stepstone("werkstudent-python", max_pages=2))
+    print(res[:5])

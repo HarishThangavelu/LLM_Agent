@@ -20,7 +20,7 @@ RESUME_VEC_PATH = "data/resume_vec.npy"
 
 def embed(text, retry=3):
 
-    text = text[:3500]   # HARD LIMIT → stabilizes Ollama load
+    text = text[:3500]
 
     for attempt in range(retry):
 
@@ -33,6 +33,7 @@ def embed(text, retry=3):
 
             if r.status_code == 200:
                 return np.array(r.json()["embedding"])
+
             else:
                 print("Embedding bad status:", r.status_code)
 
@@ -75,9 +76,23 @@ def run_ats():
 
     df = pd.read_csv(CSV_PATH)
 
+    # enforce schema stability
+    df["ats_score"] = pd.to_numeric(df.get("ats_score"), errors="coerce")
+    df["priority"] = df.get("priority", "").astype("object")
+
+    pending_df = df[df["ats_score"].isna()]
+
+    pending_count = len(pending_df)
+
+    print(f"Pending ATS jobs: {pending_count}")
+
+    if pending_count == 0:
+        print("No ATS work needed")
+        return
+
     resume = open(RESUME_PATH, encoding="utf-8").read()
 
-    # ----- Resume Embedding Cache -----
+    # ----- Resume embedding cache -----
     if os.path.exists(RESUME_VEC_PATH):
         print("Loading cached resume embedding")
         resume_vec = np.load(RESUME_VEC_PATH)
@@ -91,83 +106,46 @@ def run_ats():
 
         np.save(RESUME_VEC_PATH, resume_vec)
 
-    ats_scores = []
-    priority = []
-    pending_df = df[df["ats_score"].isna()]
-
-    print(f"Pending ATS jobs: {len(pending_df)}")
-
-    if len(pending_df) == 0:
-        print("No ATS work needed")
-    return
-
+    # ----- Incremental Processing -----
     for i, row in pending_df.iterrows():
-
-        # skip already scored
-        if not pd.isna(row.get("ats_score")):
-            ats_scores.append(row["ats_score"])
-            priority.append(row.get("priority", ""))
-            continue
 
         link = row["link"]
 
-        print(f"\nProcessing {i+1}/{len(df)}")
+        print(f"\nProcessing row index {i}")
 
-        # ----- JD Fetch -----
         ok = fetch_jd(link)
 
         if not ok:
-            ats_scores.append(None)
-            priority.append("")
             continue
 
         jd = load_cached_jd(link)
 
         if not jd or len(jd) < 800:
             print("JD invalid size")
-            ats_scores.append(None)
-            priority.append("")
             continue
 
-        # ----- Embedding -----
         jd_vec = embed(jd)
 
         if jd_vec is None:
-            ats_scores.append(None)
-            priority.append("")
             continue
 
         sim = cosine(resume_vec, jd_vec)
-
         ats = round(sim * 100, 2)
 
-        ats_scores.append(ats)
-
         if ats >= 85:
-            priority.append("HIGH")
+            pr = "HIGH"
         elif ats >= 70:
-            priority.append("MEDIUM")
+            pr = "MEDIUM"
         else:
-            priority.append("LOW")
+            pr = "LOW"
 
-        # ----- Heavy Worker Throttle -----
+        df.loc[i, "ats_score"] = ats
+        df.loc[i, "priority"] = pr
+
+        df.to_csv(CSV_PATH, index=False)
+
         sleep_time = random.uniform(5,9)
         print(f"Worker sleep {sleep_time:.2f}s")
         time.sleep(sleep_time)
-
-        # ----- Incremental Save (VERY IMPORTANT) -----
-        df.loc[i, "ats_score"] = ats
-        df.loc[i, "priority"] = priority[-1]
-        df.to_csv(CSV_PATH, index=False)
-
-    df["ats_score"] = pd.to_numeric(df.get("ats_score"), errors="coerce")
-    df["priority"] = df.get("priority", "").astype("object")
-    
-    pending_df = df[df["ats_score"].isna()]
-    print(f"Pending ATS jobs: {len(pending_df)}")
-    if len(pending_df) == 0:
-        print("No ATS work needed")
-        return
-    df.to_csv(CSV_PATH, index=False)
 
     print("\nATS scoring complete")
