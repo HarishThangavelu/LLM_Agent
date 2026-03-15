@@ -93,8 +93,15 @@ def run_ats():
 
     ats_scores = []
     priority = []
+    pending_df = df[df["ats_score"].isna()]
 
-    for i, row in df.iterrows():
+    print(f"Pending ATS jobs: {len(pending_df)}")
+
+    if len(pending_df) == 0:
+        print("No ATS work needed")
+    return
+
+    for i, row in pending_df.iterrows():
 
         # skip already scored
         if not pd.isna(row.get("ats_score")):
@@ -153,9 +160,14 @@ def run_ats():
         df.loc[i, "priority"] = priority[-1]
         df.to_csv(CSV_PATH, index=False)
 
-    df["ats_score"] = ats_scores
-    df["priority"] = priority
-
+    df["ats_score"] = pd.to_numeric(df.get("ats_score"), errors="coerce")
+    df["priority"] = df.get("priority", "").astype("object")
+    
+    pending_df = df[df["ats_score"].isna()]
+    print(f"Pending ATS jobs: {len(pending_df)}")
+    if len(pending_df) == 0:
+        print("No ATS work needed")
+        return
     df.to_csv(CSV_PATH, index=False)
 
     print("\nATS scoring complete")
