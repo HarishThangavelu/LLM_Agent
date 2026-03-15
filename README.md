@@ -1,304 +1,198 @@
-🚀 Agentic Job Intelligence Pipeline
-📌 Introduction
+# 🤖 Agentic Job Intelligence Pipeline
 
-This project builds a local agentic AI pipeline for intelligent job discovery, ranking, and decision support.
+**A local AI-powered pipeline that automatically discovers, filters, and semantically ranks job opportunities against your resume — running 100% locally, zero cloud cost.**
 
-Instead of manually searching job portals daily, the system:
+> Built by [Harish Thangavelu](https://github.com/HarishThangavelu) · MSc Student @ FAU Erlangen-Nürnberg  
+> 🔍 Actively seeking Werkstudent / Internship roles in AI & Data Engineering in Bavaria
 
-crawls job portals automatically
+---
 
-filters relevant engineering roles
+## 🧠 What This Is
 
-extracts job descriptions
+Instead of manually scanning job portals every day, this system does it for you:
 
-semantically matches them with the candidate’s resume
+- Crawls job portals automatically using browser-level scraping
+- Filters listings by role type, freshness, and keyword relevance
+- Fetches and caches full job descriptions
+- Computes semantic similarity between your resume and each JD using a **local embedding model**
+- Ranks every opportunity with an ATS-style priority score
 
-ranks opportunities using an ATS-style similarity score
+This is a real data ingestion + reasoning pipeline — not a toy demo.
 
-produces structured shortlists for efficient manual applications
+---
 
-The system is designed as a real data ingestion + reasoning pipeline, not a static ML demo.
+## 🔧 System Architecture
 
-❗ Problem Statement
-
-Modern job search — especially in AI / Software / Data roles — is:
-
-repetitive and time-consuming
-
-noisy with irrelevant listings
-
-difficult to track systematically
-
-inefficient in prioritizing high-fit opportunities
-
-Manual filtering results in:
-
-missed opportunities
-
-cognitive overload
-
-inconsistent application strategy
-
-There is a need for a continuous intelligent monitoring system that:
-
-discovers new roles
-
-evaluates relevance automatically
-
-reduces manual screening effort
-
-✅ Solution Overview
-
-This project implements a multi-stage agent pipeline:
-
-Crawl job portals (StepStone Germany)
-
-Extract structured job metadata
-
-Fetch and cache Job Descriptions (JD)
-
-Compute semantic similarity with resume using local embedding model
-
-Maintain incremental job database
-
-Generate priority ranking for application decision
-
-🧠 System Architecture
-High Level Flow
+```
 Job Portal (StepStone)
         ↓
-Playwright Scraper (Pagination + Anti-bot Safe)
+Playwright Scraper  ←  pagination + anti-bot safe
         ↓
-Structured Job Storage (CSV Master Table)
+Relevance Filter    ←  role type · freshness · keywords
         ↓
-JD Fetch + Local Cache
+JD Fetch + Hash Cache
         ↓
-Embedding Engine (Ollama local model)
+Embedding Engine    ←  Ollama · nomic-embed-text (local)
         ↓
 ATS Similarity Scoring
         ↓
-Ranked Application Shortlist
-🔧 Core Engineering Components
-1️⃣ Scraping Layer — Playwright Crawler (V4)
+Ranked Shortlist    →  25–30 relevant roles per run
+```
 
-Responsibilities:
+---
 
-browser-level scraping to bypass throttling
+## ⚙️ Core Components
 
-lazy-loading scroll handling
+### 1 · Playwright Scraper
+Browser-level scraping to handle dynamic portals that block static HTTP scrapers.
 
-pagination depth control
+| Approach | Problem |
+|---|---|
+| `requests` + BeautifulSoup | Blocked / incomplete DOM |
+| Static scraping | Misses dynamically loaded listings |
+| **Playwright ✅** | Full DOM rendering + resilient pagination |
 
-relevance filtering using skill keywords
+Features: lazy-load scroll handling · pagination depth control · retry logic for HTTP2 errors · randomized crawl pacing · freshness filter (≤ 3 days)
 
-freshness filtering (≤3 days old listings)
+### 2 · Relevance Filter
+Early-stage filtering at ingestion — before any heavy processing:
+- Role type: Werkstudent / Praktikum / Abschlussarbeit
+- Posting age: last 3 days only
+- Keyword match: skills sourced dynamically from `data/resume.txt`
 
-retry navigation logic for HTTP2 failures
+### 3 · Hash-Based JD Cache
+Each job description is stored as a hashed `.txt` file. The master dataset holds only metadata + link.
 
-portal-safe random crawl pacing
+```
+data/jd_cache/<hash>.txt   ← raw JD text
+outputs/master_jobs.csv    ← metadata index
+```
 
-Why Playwright (not requests):
+Benefits: faster reruns · no repeated network calls · offline embedding support · clean structured dataset
 
-Approach	Issue
-Requests + BS4	blocked / incomplete DOM
-Static scraping	misses dynamic listings
-API access	unavailable
-Playwright	✅ full rendering + resilient
-2️⃣ Job Storage Layer
+### 4 · ATS Scoring Engine (Local LLM Embeddings)
 
-Maintains:
+Model: **Ollama → `nomic-embed-text`** (runs fully locally)
 
-outputs/master_jobs.csv
-
-Columns:
-
-title
-
-job link
-
-posted date
-
-ats_score
-
-priority
-
-status
-
-Features:
-
-duplicate removal using job link
-
-incremental update (only new jobs appended)
-
-persistent ranking history
-
-3️⃣ JD Fetch + Cache Layer
-
-Design decision:
-
-❗ Do NOT store full JD in CSV.
-
-Instead:
-
-data/jd_cache/<hash>.txt
-
-Benefits:
-
-cleaner structured dataset
-
-faster ATS reruns
-
-avoids repeated network calls
-
-enables offline embedding scoring
-
-4️⃣ ATS Scoring Engine (Local LLM Embeddings)
-
-Model:
-
-Ollama → nomic-embed-text
+| ATS Score | Priority |
+|---|---|
+| ≥ 85 | 🔴 HIGH |
+| 70 – 85 | 🟡 MEDIUM |
+| < 70 | 🟢 LOW |
 
 Pipeline:
+1. Embed resume once → cached vector
+2. Embed each JD (truncated for stability)
+3. Compute cosine similarity
+4. Assign priority band
+5. Persist incrementally (crash-safe)
 
-embed resume once (cached vector)
+### 5 · Runner Orchestration (`run.py`)
+Coordinates the full pipeline: query generation → crawl batches → storage update → conditional ATS scoring (skips if no new work). Mimics a real workflow engine.
 
-embed JD text (truncated for stability)
+---
 
-compute cosine similarity
+## 🧰 Tech Stack
 
-assign priority band:
+| Layer | Technology |
+|---|---|
+| Scraping | Python · Playwright (headless Chromium) |
+| Embeddings | Ollama · `nomic-embed-text` |
+| Similarity | Cosine similarity · NLP |
+| Storage | CSV + text cache (SQLite planned) |
+| Environment | WSL Ubuntu · Python |
+| Orchestration | Custom agentic pipeline (`run.py`) |
 
-ATS Score	Priority
-≥85	HIGH
-70–85	MEDIUM
-<70	LOW
+---
 
-Engineering considerations:
+## 📈 Current Capabilities
 
-retry logic for embedding failures
+- Resilient browser crawler with pagination
+- Incremental job database (no full reruns)
+- Local semantic ranking — private, no API cost
+- Cache-aware ATS worker
+- Crash-resumable incremental scoring
+- ~25–30 relevant roles discovered per run
 
-worker throttling (5–9 sec delay)
+---
 
-incremental scoring (only pending rows processed)
+## 🚀 Getting Started
 
-crash-safe CSV persistence
+### Prerequisites
 
-5️⃣ Runner Orchestration Layer
+```bash
+# Python dependencies
+pip install -r requirements.txt
 
-run.py coordinates:
+# Install Playwright browsers
+playwright install chromium
 
-query generation (role + skill combinations)
+# Install and start Ollama
+# https://ollama.com
+ollama pull nomic-embed-text
+```
 
-controlled crawl batch execution
+### Run
 
-storage update
+```bash
+python run.py
+```
 
-conditional ATS execution (skip if no new work)
+Results are written to `outputs/master_jobs.csv` with ATS scores and priority bands.
 
-This mimics real workflow engine behaviour.
+---
 
-🎯 Query Strategy
+## 🗂️ Project Structure
 
-Search pattern:
+```
+LLM_Agent/
+├── run.py                  # Main orchestration entry point
+├── scraper/                # Playwright scraping layer
+├── pipeline/               # ATS scoring + embedding engine
+├── data/
+│   ├── resume.txt          # Your resume (used for embedding)
+│   └── jd_cache/           # Cached job description text files
+├── outputs/
+│   └── master_jobs.csv     # Ranked job database
+├── requirements.txt
+└── README.md
+```
 
-werkstudent-<skill>
-praktikum-<skill>
-abschlussarbeit-<skill>
+---
 
-Skills sourced dynamically from:
+## ⚠️ Limitations
 
-data/resume.txt
+- Sequential crawling (async scheduler in progress)
+- CSV storage has scale limits (SQLite migration planned)
+- No dashboard visualization yet
+- No automated application submission (by design — human applies manually)
 
-Example:
+---
 
-machine learning
+## 🔮 Roadmap
 
-python
+- [ ] Async multi-query crawl scheduler
+- [ ] SQLite job queue replacing CSV
+- [ ] Vector database integration
+- [ ] Streamlit opportunity dashboard
+- [ ] Multi-portal support: Indeed · Xing
+- [ ] Agentic notification system
+- [ ] Automated shortlist export
 
-data engineer
+---
 
-computer vision
+## 💡 Design Philosophy
 
-automation
+> Real AI systems are not just models — they are data ingestion reliability, workflow orchestration, and decision usability.
 
-This allows resume-driven job discovery.
+This project focuses on engineering robustness before feature expansion. Every component is designed to be incremental, crash-safe, and runnable on a local machine without cloud dependencies.
 
-⚙ Infrastructure Design
+---
 
-Optimized for low-resource local execution:
+## 📬 Contact
 
-Component	Stack
-Scraper	Playwright (headless Chromium)
-Embedding	Ollama local inference
-Pipeline	Python
-Data storage	CSV + text cache
-Environment	WSL Ubuntu
+**Harish Thangavelu**  
+MSc Electromobility & AI Systems · FAU Erlangen-Nürnberg  
+Open to Werkstudent / Internship roles in Bavaria — AI Engineering · Data Engineering · ML Systems
 
-Advantages:
-
-no cloud cost
-
-reproducible experiments
-
-offline scoring capability
-
-📈 Current Capabilities
-
-resilient browser crawler
-
-pagination with crawl stop logic
-
-incremental job database
-
-local semantic ranking
-
-cache-aware ATS worker
-
-crash-resumable scoring
-
-portal-safe ingestion pacing
-
-🚧 Limitations
-
-sequential crawl scheduling
-
-CSV storage scalability limits
-
-JD fetch still HTTP-based (Playwright fallback planned)
-
-no dashboard visualization yet
-
-no automated application submission
-
-🔮 Roadmap
-
-Planned upgrades:
-
-multi-query async crawl scheduler
-
-SQLite job queue
-
-vector database integration
-
-job trend analytics dashboard
-
-automated shortlist export
-
-multi-portal ingestion (Indeed / Xing)
-
-agentic notification system
-
-full autonomous job intelligence loop
-
-Long-term vision:
-
-Build a startup-grade agent platform capable of:
-
-opportunity discovery
-
-industrial market intelligence
-
-automated research pipelines
-
-AI-assisted outreach workflows
-
+[GitHub](https://github.com/HarishThangavelu) · [LinkedIn](https://linkedin.com/in/YOUR_HANDLE)
