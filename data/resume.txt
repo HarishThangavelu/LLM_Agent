@@ -1,13 +1,10 @@
-Python
-Machine Learning
-AI
-NLP
-Docker
-LangChain
-Agent
-RAG
-Data Scientist 
-DATA enginner
-Computer vision 
-open CV
-Digital twin
+machine learning
+data science
+python
+computer vision
+ai engineer
+software engineer
+data engineer
+backend python
+automation
+robotics

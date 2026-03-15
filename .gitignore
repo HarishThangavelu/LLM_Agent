@@ -5,3 +5,9 @@ agent/
 __pycache__/
 *.pyc
 *.pyo       
+outputs/
+logs/   
+*.txt
+*.log   
+data/
+test.py
