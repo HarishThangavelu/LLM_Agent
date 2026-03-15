@@ -13,28 +13,38 @@ MODEL = "nomic-embed-text"
 
 CSV_PATH = "outputs/master_jobs.csv"
 RESUME_PATH = "data/resume_full.txt"
+RESUME_VEC_PATH = "data/resume_vec.npy"
 
 
 # ---------- Embedding ----------
 
-def embed(text):
+def embed(text, retry=3):
 
-    try:
-        r = requests.post(
-            OLLAMA_URL,
-            json={"model": MODEL, "prompt": text},
-            timeout=60
-        )
+    text = text[:3500]   # HARD LIMIT → stabilizes Ollama load
 
-        if r.status_code != 200:
-            print("Embedding HTTP error")
-            return None
+    for attempt in range(retry):
 
-        return np.array(r.json()["embedding"])
+        try:
+            r = requests.post(
+                OLLAMA_URL,
+                json={"model": MODEL, "prompt": text},
+                timeout=90
+            )
 
-    except Exception as e:
-        print("Embedding error:", e)
-        return None
+            if r.status_code == 200:
+                return np.array(r.json()["embedding"])
+            else:
+                print("Embedding bad status:", r.status_code)
+
+        except Exception as e:
+            print("Embedding exception:", e)
+
+        sleep = 5 + attempt * 5
+        print(f"Embedding retry sleep {sleep}s")
+        time.sleep(sleep)
+
+    print("Embedding failed fully")
+    return None
 
 
 def cosine(a, b):
@@ -67,12 +77,19 @@ def run_ats():
 
     resume = open(RESUME_PATH, encoding="utf-8").read()
 
-    print("\nEmbedding resume...")
-    resume_vec = embed(resume)
+    # ----- Resume Embedding Cache -----
+    if os.path.exists(RESUME_VEC_PATH):
+        print("Loading cached resume embedding")
+        resume_vec = np.load(RESUME_VEC_PATH)
+    else:
+        print("Embedding resume...")
+        resume_vec = embed(resume)
 
-    if resume_vec is None:
-        print("Resume embedding failed")
-        return
+        if resume_vec is None:
+            print("Resume embedding failed")
+            return
+
+        np.save(RESUME_VEC_PATH, resume_vec)
 
     ats_scores = []
     priority = []
@@ -89,7 +106,7 @@ def run_ats():
 
         print(f"\nProcessing {i+1}/{len(df)}")
 
-        # ---- JD FETCH V2 ----
+        # ----- JD Fetch -----
         ok = fetch_jd(link)
 
         if not ok:
@@ -105,7 +122,7 @@ def run_ats():
             priority.append("")
             continue
 
-        # ---- EMBEDDING ----
+        # ----- Embedding -----
         jd_vec = embed(jd)
 
         if jd_vec is None:
@@ -126,9 +143,15 @@ def run_ats():
         else:
             priority.append("LOW")
 
-        sleep_time = random.uniform(2,4)
+        # ----- Heavy Worker Throttle -----
+        sleep_time = random.uniform(5,9)
         print(f"Worker sleep {sleep_time:.2f}s")
         time.sleep(sleep_time)
+
+        # ----- Incremental Save (VERY IMPORTANT) -----
+        df.loc[i, "ats_score"] = ats
+        df.loc[i, "priority"] = priority[-1]
+        df.to_csv(CSV_PATH, index=False)
 
     df["ats_score"] = ats_scores
     df["priority"] = priority

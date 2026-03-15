@@ -1,4 +1,7 @@
 import asyncio
+import time
+import random
+
 from scraper.stepstone_playwright import scrape_stepstone
 from pipeline.storage import update_master_csv
 from pipeline.ats import run_ats
@@ -36,7 +39,8 @@ def main():
 
     all_jobs = []
 
-    for q in queries[:5]:
+    # ----- Controlled Crawl Batch -----
+    for q in queries[:6]:
 
         print(f"[RUNNER] Searching → {q}")
 
@@ -44,14 +48,26 @@ def main():
 
         all_jobs += jobs
 
-    print(f"[RUNNER] Total scraped jobs: {len(all_jobs)}")
+        sleep = random.uniform(3,6)
+        print(f"[RUNNER] Crawl sleep {sleep:.2f}s")
+        time.sleep(sleep)
+
+    print(f"\n[RUNNER] Total scraped jobs: {len(all_jobs)}")
 
     if not all_jobs:
+        print("[RUNNER] No jobs scraped → exiting")
         return
 
     df = update_master_csv(all_jobs)
 
     print(f"[RUNNER] Master rows: {len(df)}")
+
+    # ----- RUN ATS ONLY IF NEW JOBS ADDED -----
+    if df["ats_score"].isna().sum() == 0:
+        print("[RUNNER] No new ATS work → skipping scoring")
+        return
+
+    print("\n[RUNNER] Running ATS scoring...\n")
 
     run_ats()
 
