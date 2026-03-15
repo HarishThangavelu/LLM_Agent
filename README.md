@@ -1,283 +1,304 @@
-##Agent-LLM Job Intelligence Platform
+🚀 Agentic Job Intelligence Pipeline
+📌 Introduction
 
-Overview
+This project builds a local agentic AI pipeline for intelligent job discovery, ranking, and decision support.
 
-This project focuses on building an agent-based automation pipeline for intelligent job discovery, data scraping, resume matching, and semi-automated application support.
+Instead of manually searching job portals daily, the system:
 
-The system is designed to simulate a real industrial data pipeline, combining:
+crawls job portals automatically
 
-Agentic AI workflows
+filters relevant engineering roles
 
-Web scraping
+extracts job descriptions
 
-LLM reasoning
+semantically matches them with the candidate’s resume
 
-Resume semantic matching
+ranks opportunities using an ATS-style similarity score
 
-Structured data storage
+produces structured shortlists for efficient manual applications
 
-Automation orchestration
+The system is designed as a real data ingestion + reasoning pipeline, not a static ML demo.
 
-The goal is to move beyond toy projects and build a practical engineering system usable for real-world decision support.
+❗ Problem Statement
 
-Project Motivation
+Modern job search — especially in AI / Software / Data roles — is:
 
-Modern job search processes are:
+repetitive and time-consuming
 
-repetitive
+noisy with irrelevant listings
 
-noisy
+difficult to track systematically
 
-manually intensive
+inefficient in prioritizing high-fit opportunities
 
-poorly structured
+Manual filtering results in:
 
-This project aims to build an AI agent system that:
+missed opportunities
 
-continuously monitors job portals
+cognitive overload
 
-extracts relevant engineering roles
+inconsistent application strategy
 
-evaluates alignment with candidate skills
+There is a need for a continuous intelligent monitoring system that:
 
-generates structured outputs for decision making
+discovers new roles
 
-enables semi-automated application pipelines
+evaluates relevance automatically
 
-Target Use Case
+reduces manual screening effort
 
-Primary focus:
+✅ Solution Overview
 
-Engineering job search automation
+This project implements a multi-stage agent pipeline:
 
-AI / ML / Data / Computer Vision roles
+Crawl job portals (StepStone Germany)
 
-Manufacturing and industrial tech companies
+Extract structured job metadata
 
-German job market (StepStone / LinkedIn / Indeed)
+Fetch and cache Job Descriptions (JD)
 
-System Architecture
+Compute semantic similarity with resume using local embedding model
+
+Maintain incremental job database
+
+Generate priority ranking for application decision
+
+🧠 System Architecture
 High Level Flow
-Job Portals
-   ↓
-Web Scraper Agent
-   ↓
-LLM Analysis Agent
-   ↓
-Resume Matching Engine
-   ↓
-Structured Storage (Excel / CSV / DB)
-   ↓
-Application Decision Support
-Core Components
-1. Scraping Layer
-
-Sources:
-
-StepStone
-
-LinkedIn
-
-Indeed
-
-Company career portals
-
-Public engineering forums / news
+Job Portal (StepStone)
+        ↓
+Playwright Scraper (Pagination + Anti-bot Safe)
+        ↓
+Structured Job Storage (CSV Master Table)
+        ↓
+JD Fetch + Local Cache
+        ↓
+Embedding Engine (Ollama local model)
+        ↓
+ATS Similarity Scoring
+        ↓
+Ranked Application Shortlist
+🔧 Core Engineering Components
+1️⃣ Scraping Layer — Playwright Crawler (V4)
 
 Responsibilities:
 
-job listing extraction
+browser-level scraping to bypass throttling
 
-metadata normalization
+lazy-loading scroll handling
 
-company clustering
+pagination depth control
 
-Tools considered:
+relevance filtering using skill keywords
 
-Playwright
+freshness filtering (≤3 days old listings)
 
-Requests + BeautifulSoup
+retry navigation logic for HTTP2 failures
 
-API access where available
+portal-safe random crawl pacing
 
-2. Agentic Intelligence Layer
+Why Playwright (not requests):
 
-Uses:
+Approach	Issue
+Requests + BS4	blocked / incomplete DOM
+Static scraping	misses dynamic listings
+API access	unavailable
+Playwright	✅ full rendering + resilient
+2️⃣ Job Storage Layer
 
-Local LLM (Ollama)
+Maintains:
 
-LangChain / Agent frameworks
+outputs/master_jobs.csv
 
-Prompt-driven reasoning
+Columns:
 
-Tasks:
+title
 
-job relevance scoring
+job link
 
-skill gap detection
+posted date
 
-keyword extraction
+ats_score
 
-role clustering
+priority
 
-opportunity hypothesis generation
+status
 
-3. Resume Knowledge Base
+Features:
 
-Resume acts as:
+duplicate removal using job link
 
-dynamic skill database
+incremental update (only new jobs appended)
 
-project experience memory
+persistent ranking history
 
-embedding source
+3️⃣ JD Fetch + Cache Layer
 
-Functions:
+Design decision:
 
-semantic similarity matching
+❗ Do NOT store full JD in CSV.
 
-automatic keyword tuning
+Instead:
 
-cover letter drafting support
+data/jd_cache/<hash>.txt
 
-4. Data Pipeline
+Benefits:
 
-Outputs:
+cleaner structured dataset
 
-structured Excel sheets
+faster ATS reruns
 
-ranked job opportunities
+avoids repeated network calls
 
-company opportunity signals
+enables offline embedding scoring
 
-Future extension:
+4️⃣ ATS Scoring Engine (Local LLM Embeddings)
 
-vector database
+Model:
 
-dashboard analytics
+Ollama → nomic-embed-text
 
-digital job intelligence agent
+Pipeline:
 
-5. Automation Layer (Future)
+embed resume once (cached vector)
 
-Workflow orchestration planned via:
+embed JD text (truncated for stability)
 
-n8n (local lightweight setup)
+compute cosine similarity
 
-Python trigger scripts
+assign priority band:
 
-scheduled scraping agents
+ATS Score	Priority
+≥85	HIGH
+70–85	MEDIUM
+<70	LOW
 
-Purpose:
+Engineering considerations:
 
-periodic job discovery
+retry logic for embedding failures
 
-auto-ranking pipeline
+worker throttling (5–9 sec delay)
 
-notification system
+incremental scoring (only pending rows processed)
 
-Infrastructure Strategy
+crash-safe CSV persistence
 
-Optimized for low-resource laptop environment:
+5️⃣ Runner Orchestration Layer
 
-Component	Location
-Python agent development	WSL Ubuntu
-Large datasets	Secondary Drive (D:)
-Docker storage	Secondary Drive
-Automation workflows	Local n8n
+run.py coordinates:
 
-This hybrid setup ensures:
+query generation (role + skill combinations)
 
-faster execution
+controlled crawl batch execution
 
-SSD space efficiency
+storage update
 
-scalable experimentation
+conditional ATS execution (skip if no new work)
 
-Design Philosophy
+This mimics real workflow engine behaviour.
 
-This project intentionally avoids:
+🎯 Query Strategy
 
-toy ML notebooks
+Search pattern:
 
-static datasets
+werkstudent-<skill>
+praktikum-<skill>
+abschlussarbeit-<skill>
 
-academic-only pipelines
+Skills sourced dynamically from:
 
-Instead focuses on:
+data/resume.txt
 
-real data ingestion
+Example:
 
-real uncertainty
+machine learning
 
-agent decision making
+python
 
-deployable automation
+data engineer
 
-Future Roadmap
+computer vision
 
-Planned extensions:
+automation
 
-multi-agent orchestration
+This allows resume-driven job discovery.
 
-manufacturing supplier intelligence analysis
+⚙ Infrastructure Design
 
-computer vision opportunity detection pipeline
+Optimized for low-resource local execution:
 
-autonomous job application workflows
+Component	Stack
+Scraper	Playwright (headless Chromium)
+Embedding	Ollama local inference
+Pipeline	Python
+Data storage	CSV + text cache
+Environment	WSL Ubuntu
 
-industrial problem discovery engine
+Advantages:
 
-Long term vision:
+no cloud cost
 
-Build a startup-grade AI agent platform capable of:
+reproducible experiments
 
-identifying business opportunities
+offline scoring capability
 
-automating research
+📈 Current Capabilities
 
-supporting technical consulting outreach
+resilient browser crawler
 
-Development Status
+pagination with crawl stop logic
 
-Current stage:
+incremental job database
 
-environment setup
+local semantic ranking
 
-storage architecture optimization
+cache-aware ATS worker
 
-Docker migration
+crash-resumable scoring
 
-automation planning
+portal-safe ingestion pacing
 
-scraping + agent pipeline design
+🚧 Limitations
 
-Next milestones:
+sequential crawl scheduling
 
-first scraping agent implementation
+CSV storage scalability limits
 
-first LLM relevance scoring pipeline
+JD fetch still HTTP-based (Playwright fallback planned)
 
-n8n workflow integration
+no dashboard visualization yet
 
-structured job intelligence dashboard
+no automated application submission
 
-Author
+🔮 Roadmap
 
-Engineering background:
+Planned upgrades:
 
-Mechanical Engineering
+multi-query async crawl scheduler
 
-AI / ML systems development
+SQLite job queue
 
-Computer Vision experience
+vector database integration
 
-Automation workflow experimentation
+job trend analytics dashboard
 
-Focus areas:
+automated shortlist export
 
-Agentic AI systems
+multi-portal ingestion (Indeed / Xing)
 
-Industrial AI applications
+agentic notification system
 
-Automation pipelines
+full autonomous job intelligence loop
+
+Long-term vision:
+
+Build a startup-grade agent platform capable of:
+
+opportunity discovery
+
+industrial market intelligence
+
+automated research pipelines
+
+AI-assisted outreach workflows
+

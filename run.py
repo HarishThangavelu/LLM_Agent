@@ -44,7 +44,7 @@ def main():
 
         print(f"[RUNNER] Searching → {q}")
 
-        jobs = asyncio.run(scrape_stepstone(query=q))
+        jobs = asyncio.run(scrape_stepstone(query=q, max_pages=2))
 
         all_jobs += jobs
 

@@ -27,6 +27,29 @@ def is_relevant(title):
     return any(k in title.lower() for k in SKILL_FILTER)
 
 
+# ---------- Navigation Stabilizer ----------
+
+async def safe_goto(page, url, retry=2):
+
+    for attempt in range(retry):
+
+        try:
+            await page.goto(
+                url,
+                timeout=60000,
+                wait_until="domcontentloaded"
+            )
+            return True
+
+        except Exception as e:
+            print(f"[PW] goto retry {attempt+1} → {e}")
+            await page.wait_for_timeout(3000 + attempt * 2000)
+
+    return False
+
+
+# ---------- Main Scraper ----------
+
 async def scrape_stepstone(query, max_pages=2):
 
     print("RUNNING STEPSTONE V4")
@@ -40,11 +63,23 @@ async def scrape_stepstone(query, max_pages=2):
 
         for page_no in range(max_pages):
 
-            url = f"{BASE}/jobs/{query}" if page_no == 0 else f"{BASE}/jobs/{query}?page={page_no+1}"
+            url = (
+                f"{BASE}/jobs/{query}"
+                if page_no == 0
+                else f"{BASE}/jobs/{query}?page={page_no+1}"
+            )
 
             print(f"[PW] Opening page {page_no+1}: {url}")
 
-            await page.goto(url, timeout=60000)
+            # random jitter before navigation
+            await page.wait_for_timeout(random.randint(2000, 4000))
+
+            ok = await safe_goto(page, url)
+
+            if not ok:
+                print("[PW] Pagination navigation failed → stopping crawl")
+                break
+
             await page.wait_for_timeout(4000)
 
             # cookie
@@ -53,12 +88,16 @@ async def scrape_stepstone(query, max_pages=2):
             except:
                 pass
 
-            # lazy load
+            # lazy load scroll
             for _ in range(5):
                 await page.mouse.wheel(0, 4000)
                 await page.wait_for_timeout(1200)
 
-            await page.wait_for_selector("article")
+            try:
+                await page.wait_for_selector("article", timeout=15000)
+            except:
+                print("[PW] No articles found → stop")
+                break
 
             cards = await page.query_selector_all("article")
 
@@ -102,7 +141,7 @@ async def scrape_stepstone(query, max_pages=2):
 
             print("[PW] Relevant jobs this page:", page_relevant)
 
-            # crawl stop logic
+            # ----- Crawl Stop Logic -----
             if page_relevant == 0:
                 print("[PW] Stop pagination → no relevant jobs")
                 break
@@ -113,7 +152,7 @@ async def scrape_stepstone(query, max_pages=2):
 
         await browser.close()
 
-    # cross-page dedupe
+    # ----- Cross-page dedupe -----
     jobs = list({j["link"]: j for j in jobs}.values())
 
     print("[PW] Final jobs:", len(jobs))
@@ -121,7 +160,7 @@ async def scrape_stepstone(query, max_pages=2):
     return jobs
 
 
-# optional standalone debug run
+# ----- Debug Run -----
 if __name__ == "__main__":
     res = asyncio.run(scrape_stepstone("werkstudent-python", max_pages=2))
     print(res[:5])
