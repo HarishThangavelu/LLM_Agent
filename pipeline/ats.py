@@ -5,8 +5,7 @@ import time
 import random
 import os
 
-from pipeline.jd_fetch import fetch_jd, jd_cache_path
-
+from pipeline.jd_clean_fetch import fetch_clean_jd as fetch_jd
 
 OLLAMA_URL = "http://localhost:11434/api/embeddings"
 MODEL = "nomic-embed-text"

@@ -38,7 +38,10 @@ def update_master_csv(new_jobs: list[dict]) -> pd.DataFrame:
     # ensure metadata schema
     for col in REQUIRED_COLUMNS:
         if col not in new_df.columns:
-            new_df[col] = ""
+            if col == "ats_score":
+                new_df[col] = None
+            else:
+                new_df[col] = ""
 
     if os.path.exists(CSV_PATH):
 
@@ -56,7 +59,7 @@ def update_master_csv(new_jobs: list[dict]) -> pd.DataFrame:
 
         combined = new_df
         new_added = len(new_df)
-
+    combined["ats_score"] = pd.to_numeric(combined["ats_score"], errors="coerce")
     # ensure all required columns exist after merge
     for col in REQUIRED_COLUMNS:
         if col not in combined.columns:
