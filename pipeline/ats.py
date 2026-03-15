@@ -33,7 +33,6 @@ def embed(text, retry=3):
 
             if r.status_code == 200:
                 return np.array(r.json()["embedding"])
-
             else:
                 print("Embedding bad status:", r.status_code)
 
@@ -76,7 +75,6 @@ def run_ats():
 
     df = pd.read_csv(CSV_PATH)
 
-    # enforce schema stability
     df["ats_score"] = pd.to_numeric(df.get("ats_score"), errors="coerce")
     df["priority"] = df.get("priority", "").astype("object")
 
@@ -113,39 +111,41 @@ def run_ats():
 
         print(f"\nProcessing row index {i}")
 
+        work_done = False   # ⭐ KEY FIX
+
         ok = fetch_jd(link)
 
-        if not ok:
-            continue
+        if ok:
 
-        jd = load_cached_jd(link)
+            jd = load_cached_jd(link)
 
-        if not jd or len(jd) < 800:
-            print("JD invalid size")
-            continue
+            if jd and len(jd) >= 800:
 
-        jd_vec = embed(jd)
+                jd_vec = embed(jd)
 
-        if jd_vec is None:
-            continue
+                if jd_vec is not None:
 
-        sim = cosine(resume_vec, jd_vec)
-        ats = round(sim * 100, 2)
+                    sim = cosine(resume_vec, jd_vec)
+                    ats = round(sim * 100, 2)
 
-        if ats >= 85:
-            pr = "HIGH"
-        elif ats >= 70:
-            pr = "MEDIUM"
-        else:
-            pr = "LOW"
+                    if ats >= 85:
+                        pr = "HIGH"
+                    elif ats >= 70:
+                        pr = "MEDIUM"
+                    else:
+                        pr = "LOW"
 
-        df.loc[i, "ats_score"] = ats
-        df.loc[i, "priority"] = pr
+                    df.loc[i, "ats_score"] = ats
+                    df.loc[i, "priority"] = pr
 
-        df.to_csv(CSV_PATH, index=False)
+                    df.to_csv(CSV_PATH, index=False)
 
-        sleep_time = random.uniform(5,9)
-        print(f"Worker sleep {sleep_time:.2f}s")
-        time.sleep(sleep_time)
+                    work_done = True
+
+        # ⭐ sleep ONLY if real scoring happened
+        if work_done:
+            sleep_time = random.uniform(5,9)
+            print(f"Worker sleep {sleep_time:.2f}s")
+            time.sleep(sleep_time)
 
     print("\nATS scoring complete")

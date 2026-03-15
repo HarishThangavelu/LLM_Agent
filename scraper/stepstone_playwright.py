@@ -59,17 +59,24 @@ async def scrape_stepstone(query, max_pages=2):
     async with async_playwright() as p:
 
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-
         for page_no in range(max_pages):
+            context = await browser.new_context(
+            viewport={"width": random.randint(1100,1400),
+                  "height": random.randint(700,900)},
+            user_agent=random.choice([
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Mozilla/5.0 (X11; Linux x86_64)",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+        ])
+    )
+        page = await context.new_page()
+        url = (
+        f"{BASE}/jobs/{query}"
+        if page_no == 0
+        else f"{BASE}/jobs/{query}?page={page_no+1}"
+    )
+        print(f"[PW] Opening page {page_no+1}: {url}")
 
-            url = (
-                f"{BASE}/jobs/{query}"
-                if page_no == 0
-                else f"{BASE}/jobs/{query}?page={page_no+1}"
-            )
-
-            print(f"[PW] Opening page {page_no+1}: {url}")
 
             # random jitter before navigation
             await page.wait_for_timeout(random.randint(2000, 4000))
@@ -78,7 +85,9 @@ async def scrape_stepstone(query, max_pages=2):
 
             if not ok:
                 print("[PW] Pagination navigation failed → stopping crawl")
+                await context.close()
                 break
+            await page.wait_for_timeout(4000)
 
             await page.wait_for_timeout(4000)
 
@@ -97,6 +106,7 @@ async def scrape_stepstone(query, max_pages=2):
                 await page.wait_for_selector("article", timeout=15000)
             except:
                 print("[PW] No articles found → stop")
+                await context.close()
                 break
 
             cards = await page.query_selector_all("article")
@@ -149,6 +159,7 @@ async def scrape_stepstone(query, max_pages=2):
             sleep = random.uniform(3, 6)
             print(f"[PW] Page sleep {sleep:.2f}s")
             await page.wait_for_timeout(int(sleep * 1000))
+            await context.close()
 
         await browser.close()
 
